@@ -485,7 +485,7 @@
     var s = S();
     var h = head('Settings', 'Everything is editable. Leave fields blank until you know them.');
     h += '<div class="card">' + SF.concat(VISION).map(function (f) { return field(f, s[f.k]); }).join('') + '<button class="btn" id="save-settings" style="width:100%">Save settings</button></div>';
-    h += locCard(s) + peopleCard() + activityCard();
+    h += locCard(s) + peopleCard() + activityCard() + '<p class="sub" id="legal-links" style="text-align:center;margin:18px 0 8px"><a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a> · <a href="terms.html" target="_blank" rel="noopener">Terms of use</a></p>';
     h += '<div class="card"><h3>Sync (everyone, all devices)</h3><p class="sub" style="margin:6px 0 10px">Tap <b>Sign in</b> at the top and use your own Google account. Everyone’s changes go to one shared “Wedding Planner Sync” folder in Google Drive (shared by the organizer), and edits merge item by item.</p>' +
       '<div class="kv"><span>Signed in as</span><b>' + esc((function () { try { return JSON.parse(localStorage.getItem('wp-sync-account') || '{}').email || 'Not signed in'; } catch (e) { return 'Not signed in'; } })()) + '</b></div><div class="kv"><span>You appear as</span><b>' + esc(localStorage.getItem('wp-sync-me') || '—') + '</b></div></div>';
     h += '<div class="card"><h3>Backup & export</h3><p class="sub" style="margin:6px 0 10px">A JSON backup contains everything and can be restored on the phone or the computer.</p>' +
