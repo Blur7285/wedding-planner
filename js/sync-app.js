@@ -114,8 +114,9 @@
         var tc = google.accounts.oauth2.initTokenClient({
           client_id: cid, scope: GIS_SCOPE, login_hint: (auth && auth.email) || lget('wp-sync-lastemail') || undefined,
           callback: function (r) { if (r && r.access_token) ok(r); else bad(Object.assign(new Error((r && (r.error_description || r.error)) || 'Google sign-in failed'), { code: r && r.error })); },
-          error_callback: function (e) { bad(Object.assign(new Error((e && e.message) || 'Sign-in window closed'), { code: e && e.type === 'popup_closed' ? 'CANCELLED' : (e && e.type) || '' })); }
+          error_callback: function (e) { bad(Object.assign(new Error((e && e.message) || 'Sign-in window closed'), { code: e && e.type === 'popup_closed' ? 'CANCELLED' : e && e.type === 'popup_failed_to_open' ? 'POPUP_BLOCKED' : (e && e.type) || '' })); }
         });
+        popupPending = true; renderModal();
         tc.requestAccessToken({ prompt: auth && auth.email ? '' : 'consent' });
       });
     }).then(async function (r) {
@@ -185,16 +186,28 @@
     })();
     return refreshing;
   }
+  // Popup watchdog: GitHub Pages + Google's popup trigger Cross-Origin-Opener-Policy checks, so a closed popup isn't always
+  // reported. When the user comes back to this window and nothing arrived, stop waiting and offer full-page sign-in.
+  var popupPending = false;
+  window.addEventListener('focus', function () {
+    if (!popupPending) return;
+    setTimeout(function () { if (popupPending && state === 'syncing') { popupPending = false; setState('signin', 'The Google window closed or didn’t finish. Try again, or use “Sign in on this page instead”.'); } }, 2500);
+  });
+  function redirectSignIn() { lset('wp-sync-redirect', '1'); startRedirect().catch(function (e) { setState('error', 'Sign-in failed: ' + (e.message || e)); }); }
   async function signIn() {
     if (!web && !Plug.GoogleAuth) { setState('error', 'Google sign-in plugin missing.'); return; }
     if (web) { var ci = modal && modal.querySelector('#wp-webclient'); if (ci && ci.value.trim()) lset('wp-sync-webclient', ci.value.trim()); }
     setState('syncing', 'Opening Google sign-in…');
     try {
-      await authorize(true); needsSignin = false;
+      await authorize(true); popupPending = false; needsSignin = false;
       if (auth.email) lset('wp-sync-lastemail', auth.email);
       afterSignin(); closeModal(); runSync('signin');
     } catch (e) {
+      var wasPending = popupPending; popupPending = false;
+      if (e.code === 'POPUP_BLOCKED') { setState('syncing', 'Pop-up blocked: signing in on this page instead…'); redirectSignIn(); return; }
+      if (e.code === 'NO_CLIENT') { setState('error', e.message); return; }
       if (e.code === 'CANCELLED') setState('signin', 'Sign-in cancelled.');
+      else if (web && navigator.onLine !== false && /Could not load Google sign-in/.test(String(e.message))) { setState('syncing', 'Google sign-in script didn’t load: signing in on this page instead…'); redirectSignIn(); return; }
       else setState(e.offline ? 'offline' : 'error', 'Sign-in failed: ' + (e.message || e) + (e.code ? ' [' + e.code + ']' : ''));
     }
   }
@@ -338,6 +351,7 @@
         (auth ? (needsSignin ? '<button class="sxm-btn" data-act="signin">Sign in again</button>' : '<button class="sxm-btn" data-act="sync">Sync now</button>') + '<button class="sxm-btn alt" data-act="signout">Sign out</button>'
               : ((web && !CFG.WEB_CLIENT_ID) ? '<label class="sxm-sm" style="display:block;margin-top:10px">Web OAuth client ID (one-time setup)<input id="wp-webclient" placeholder="749897568298-….apps.googleusercontent.com" value="' + esc(lget('wp-sync-webclient') || '') + '" style="margin-top:4px;font-size:13px"></label>' : '') +
                 '<button class="sxm-btn" data-act="signin">Sign in with Google</button>') +
+        ((web && !useRedirect() && (!auth || needsSignin)) ? '<button class="sxm-btn alt" data-act="redirect">Sign in on this page instead</button>' : '') +
         '<div class="sxm-sm" style="margin-top:8px">Everyone’s changes are kept in one shared “' + esc(S.FOLDER_NAME) + '” folder in Google Drive that the organizer shares with each person. Changes merge item by item (the newest edit to each item wins), so two people editing at once don’t erase each other’s work. “Last updated by” shows who changed what.</div>' +
         '</div></div>';
     }
@@ -348,6 +362,7 @@
         var a = b.getAttribute('data-act');
         if (a === 'close' || a === 'later') closeModal();
         else if (a === 'signin') signIn();
+        else if (a === 'redirect') { var ci2 = modal.querySelector('#wp-webclient'); if (ci2 && ci2.value.trim()) lset('wp-sync-webclient', ci2.value.trim()); popupPending = false; setState('syncing', 'Going to Google…'); redirectSignIn(); }
         else if (a === 'connect') { var pk = document.getElementById('wp-pickerkey'); if (pk && pk.value.trim()) lset('wp-sync-pickerkey', pk.value.trim()); connect(); }
         else if (a === 'sync') runSync('manual');
         else if (a === 'signout') signOut();
