@@ -1,5 +1,9 @@
-/* Computer sign-in (hosted web app at https://blur7285.github.io/wedding-planner/).
-   Paste the Web OAuth client ID here, or enter it once in the app's Sync dialog (it is then stored on that device only).
-   A client ID is public by design; there is no client secret in this app.
-   Google Cloud > Credentials > Web client > Authorized JavaScript origins must include: https://blur7285.github.io */
-window.WP_CONFIG = { WEB_CLIENT_ID: '' };
+/* Public configuration (safe to publish: OAuth client IDs and Drive file IDs are not secrets).
+   WEB_CLIENT_ID: the "Web application" OAuth client ID from Google Cloud (Authorized JavaScript origin https://blur7285.github.io,
+   Authorized redirect URI https://blur7285.github.io/wedding-planner/). Until it is set, each device can paste it in the Sign-in panel.
+   SYNC_FOLDER_ID / SYNC_FILE_ID: the shared "Wedding Planner Sync" folder and its data file; access is granted only by sharing it in Drive. */
+window.WP_CONFIG = {
+  WEB_CLIENT_ID: '',
+  SYNC_FOLDER_ID: '1IgPWFlCCccFFK82Q9z_ru2IUD_pe6rtn',
+  SYNC_FILE_ID: '172BSAeagqLHFjhumKZTOKtoLfrYwCZLk'
+};

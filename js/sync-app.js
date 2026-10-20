@@ -16,7 +16,12 @@
     try { Plug[n] = (cap.Plugins && cap.Plugins[n]) || (native && cap.registerPlugin ? cap.registerPlugin(n) : undefined); } catch (e) {}
   });
   var ls = window.localStorage;
-  var web = !native;   // computer: Windows desktop build (localhost) in Chrome/Edge, Google Identity Services token flow
+  var web = !native;   // web app (computer, iPhone, Android browser): Google Identity Services token flow
+  var UA = navigator.userAgent || '';
+  var IOS = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+  // iPhone/iPad (Safari and Home Screen apps): popups can't report back from a standalone web app, so use a full-page redirect.
+  function useRedirect() { return web && (IOS || lget('wp-sync-redirect') === '1'); }
+  function redirectUri() { return location.origin + location.pathname.replace(/index\.html$/, ''); }
   var CFG = window.WP_CONFIG || {};
   function webClientId() { return (CFG.WEB_CLIENT_ID || lget('wp-sync-webclient') || '').trim(); }
   var GIS_SCOPE = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email';
@@ -26,7 +31,7 @@
   function lset(k, v) { try { ls.setItem(k, v); } catch (e) {} }
   function lrem(k) { try { ls.removeItem(k); } catch (e) {} }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function getWho() { return native ? 'Phone' : 'Computer'; }
+  function getWho() { return S.whoLabel ? S.whoLabel() : (native ? 'Phone' : 'Computer'); }
   function setWho(w) { lset('wp-sync-who', w); }
   function ago(t) {
     var d = Date.now() - t;
@@ -103,7 +108,7 @@
     return loadGis().then(function () {
       return new Promise(function (ok, bad) {
         var tc = google.accounts.oauth2.initTokenClient({
-          client_id: cid, scope: GIS_SCOPE, login_hint: (auth && auth.email) || lget('wp-sync-owner') || undefined,
+          client_id: cid, scope: GIS_SCOPE, login_hint: (auth && auth.email) || lget('wp-sync-lastemail') || undefined,
           callback: function (r) { if (r && r.access_token) ok(r); else bad(Object.assign(new Error((r && (r.error_description || r.error)) || 'Google sign-in failed'), { code: r && r.error })); },
           error_callback: function (e) { bad(Object.assign(new Error((e && e.message) || 'Sign-in window closed'), { code: e && e.type === 'popup_closed' ? 'CANCELLED' : (e && e.type) || '' })); }
         });
@@ -117,7 +122,34 @@
       return auth.access_token;
     });
   }
+  function startRedirect() {
+    var cid = webClientId();
+    if (!cid) return Promise.reject(Object.assign(new Error('Sign-in is not set up yet: paste the Web OAuth client ID below.'), { code: 'NO_CLIENT' }));
+    var st = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    lset('wp-sync-oauthstate', st + '|' + (location.hash || '#overview'));
+    var hint = (auth && auth.email) || lget('wp-sync-lastemail') || '';
+    var u = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=' + encodeURIComponent(cid) + '&redirect_uri=' + encodeURIComponent(redirectUri()) +
+      '&response_type=token&include_granted_scopes=true&scope=' + encodeURIComponent(GIS_SCOPE) + '&state=' + encodeURIComponent(st) +
+      (hint ? '&login_hint=' + encodeURIComponent(hint) + '&prompt=none' : '&prompt=consent');
+    location.assign(u);
+    return new Promise(function () {});   // page navigates away
+  }
+  async function finishRedirect() {
+    var raw = lget('wp-sync-redirect-done'); if (!raw) return false;
+    lrem('wp-sync-redirect-done');
+    var r; try { r = JSON.parse(raw); } catch (e) { return false; }
+    if (r.error) {
+      if (r.error === 'interaction_required' || r.error === 'login_required' || r.error === 'consent_required') { lrem('wp-sync-lastemail'); return startRedirect(); }
+      setState('signin', 'Sign-in did not finish: ' + r.error); return true;
+    }
+    var email = await accountEmail(r.t);
+    auth = { email: email, access_token: r.t, exp: r.exp };
+    authSave(); lset('wp-sync-webtok', JSON.stringify({ t: r.t, exp: r.exp })); if (email) lset('wp-sync-lastemail', email);
+    needsSignin = false; afterSignin(); runSync('signin');
+    return true;
+  }
   async function authorize(interactive) {
+    if (web && interactive && useRedirect()) return startRedirect();
     if (web) return webAuthorize(interactive);
     var G = Plug.GoogleAuth;
     if (!G) throw Object.assign(new Error('Google sign-in works in the Android app only.'), { code: 'NO_PLUGIN' });
@@ -155,15 +187,26 @@
     setState('syncing', 'Opening Google sign-in…');
     try {
       await authorize(true); needsSignin = false;
-      var em = (auth.email || '').toLowerCase();
-      var owner = (lget('wp-sync-owner') || '').toLowerCase();
-      if (em && !owner) lset('wp-sync-owner', em);
-      else if (em && owner && em !== owner) detail = 'Note: signed in as ' + em + ' — use ' + owner + ' on both devices so they share the same data.';
-      closeModal(); runSync('signin');
+      if (auth.email) lset('wp-sync-lastemail', auth.email);
+      afterSignin(); closeModal(); runSync('signin');
     } catch (e) {
       if (e.code === 'CANCELLED') setState('signin', 'Sign-in cancelled.');
       else setState(e.offline ? 'offline' : 'error', 'Sign-in failed: ' + (e.message || e) + (e.code ? ' [' + e.code + ']' : ''));
     }
+  }
+  function afterSignin() { identify(); }
+  // Who am I? Match the signed-in e-mail to the shared People list; add myself if I'm new (I can rename myself in Settings).
+  function identify(addIfMissing) {
+    var em = ((auth && auth.email) || '').toLowerCase(); if (!em) return;
+    var a; try { a = JSON.parse(ls.getItem('wp-people') || '[]') || []; } catch (e) { a = []; }
+    var m = a.filter(function (x) { return x && (x.email || '').toLowerCase() === em; })[0];
+    if (!m && addIfMissing) {
+      var nm = em.split('@')[0].replace(/[._\d]+/g, ' ').trim(); nm = nm ? nm.charAt(0).toUpperCase() + nm.slice(1) : 'Guest';
+      m = { id: 'p_' + Date.now().toString(36), name: nm, email: em, role: '' }; a.push(m);
+      ls.setItem('wp-people', JSON.stringify(a));
+      detail = 'Welcome! You were added to People as “' + nm + '”. You can change your name in Settings.';
+    }
+    if (m && m.name) lset('wp-sync-me', m.name.trim().split(' ')[0]);
   }
   async function signOut() {
     var tok = auth && auth.access_token;
@@ -176,6 +219,7 @@
   /* ---------- engine ---------- */
   var drive = S.createDrive({ fetch: sfetch, getToken: getToken, refreshToken: function () { return refresh(true); } });
   var engine = S.createEngine({
+    folderId: function () { return (CFG.SYNC_FOLDER_ID || '').trim(); }, fileId: function () { return (CFG.SYNC_FILE_ID || '').trim(); },
     drive: drive, who: getWho, email: function () { return auth && auth.email || ''; }, now: function () { return Date.now(); },
     rawIO: S.local.rawIO, loadMeta: S.local.loadMeta, saveMeta: S.local.saveMeta, suspend: function (fn) { return fn(); }
   });
@@ -242,15 +286,15 @@
     {
       var last = lget('wp-sync-last');
       h = '<div class="modal-card"><div class="modal-header"><h3>Sync with Google Drive</h3><button data-act="close" style="background:none;border:none;color:#fff;font-size:24px;min-width:44px;min-height:44px;cursor:pointer">&#x2715;</button></div><div class="modal-body">' +
-        '<div class="sxm-sm" style="margin-bottom:4px">This device: <b>' + esc(native ? 'Android phone' : 'Computer') + '</b></div>' +
+        '<div class="sxm-sm" style="margin-bottom:4px">This device: <b>' + esc(S.device ? S.device() : (native ? 'Android phone' : 'Computer')) + '</b>' + (lget('wp-sync-me') ? ' · You: <b>' + esc(lget('wp-sync-me')) + '</b>' : '') + '</div>' +
         '<div style="margin:10px 0 2px;font-weight:600">' + LABEL[state] + '</div>' +
-        '<div class="sxm-sm">' + (auth ? (needsSignin ? 'Sign-in needed again for ' : 'Signed in as ') + esc(auth.email || 'Google account') : 'Not signed in — the app works normally; sign in with ' + esc(lget('wp-sync-owner') || 'your Google account') + ' to sync this ' + (native ? 'phone' : 'computer') + ' with your ' + (native ? 'computer' : 'phone') + '.') + '</div>' +
+        '<div class="sxm-sm">' + (auth ? (needsSignin ? 'Sign-in needed again for ' : 'Signed in as ') + esc(auth.email || 'Google account') : 'Not signed in. The app works on this device; sign in with your Google account to share the plan with everyone else.' + (useRedirect() ? ' You’ll go to Google and come straight back here.' : '')) + '</div>' +
         (last ? '<div class="sxm-sm">Last synced ' + esc(ago(+last)) + '</div>' : '') +
         (detail ? '<div class="' + (state === 'error' ? 'sxm-err' : 'sxm-sm') + '">' + esc(detail) + '</div>' : '') +
         (auth ? (needsSignin ? '<button class="sxm-btn" data-act="signin">Sign in again</button>' : '<button class="sxm-btn" data-act="sync">Sync now</button>') + '<button class="sxm-btn alt" data-act="signout">Sign out</button>'
               : ((web && !CFG.WEB_CLIENT_ID) ? '<label class="sxm-sm" style="display:block;margin-top:10px">Web OAuth client ID (one-time setup)<input id="wp-webclient" placeholder="749897568298-….apps.googleusercontent.com" value="' + esc(lget('wp-sync-webclient') || '') + '" style="margin-top:4px;font-size:13px"></label>' : '') +
                 '<button class="sxm-btn" data-act="signin">Sign in with Google</button>') +
-        '<div class="sxm-sm" style="margin-top:8px">Your plans are kept in a private “' + esc(S.FOLDER_NAME) + '” folder in your Google Drive (not shared with anyone). Your phone and computer both read and write it; the newest edit to each item wins.</div>' +
+        '<div class="sxm-sm" style="margin-top:8px">Everyone’s changes are kept in one shared “' + esc(S.FOLDER_NAME) + '” folder in Google Drive that the organizer shares with each person. Changes merge item by item (the newest edit to each item wins), so two people editing at once don’t erase each other’s work. “Last updated by” shows who changed what.</div>' +
         '</div></div>';
     }
     modal.innerHTML = h;
@@ -306,11 +350,13 @@
       await refresh();   // silent re-authorize on every sync: fresh ~1 h access token from Google Play services (never shows UI)
       var r = await engine.sync();
       lset('wp-sync-last', String(Date.now())); needsSignin = false;
-      setState('synced', '');
+      identify(true);
+      setState('synced', detail && /Welcome/.test(detail) ? detail : '');
       renderCaptions();
       if (r.changedKeys.length) scheduleReload();
     } catch (e) {
-      if (e.offline || (navigator.onLine === false)) setState('offline', 'No connection — will retry.');
+      if (e.noAccess) setState('error', (e.message === 'READ_ONLY' ? 'This Google account (' + ((auth && auth.email) || '') + ') can only view the shared “' + S.FOLDER_NAME + '” folder. Ask the organizer to make you an Editor.' : 'This Google account (' + ((auth && auth.email) || '') + ') doesn’t have access to the shared “' + S.FOLDER_NAME + '” folder yet. Ask the organizer to share it with this address, then tap Sync now. Your edits are kept on this device until then.'));
+      else if (e.offline || (navigator.onLine === false)) setState('offline', 'No connection — will retry.');
       else if (e.signin || e.status === 401) { needsSignin = true; setState('signin', 'Google sign-in expired — ' + (native ? 'tap' : 'click') + ' “Sign in again” to continue syncing. Your data on this device is safe.'); }
       else {
         var msg = 'Sync failed' + (e.status ? ' (' + e.status + ')' : '') + ': ';
@@ -371,6 +417,8 @@
   async function start() {
     mountHeader(); mountModal(); renderCaptions();
     auth = authLoad();
+    if (web && !useRedirect()) { setTimeout(function () { loadGis().catch(function () {}); }, 1500); }   // preload so the sign-in popup opens straight from the click
+    if (web && lget('wp-sync-redirect-done')) { finishRedirect(); return; }
     if (auth && web) { try { var wt = JSON.parse(lget('wp-sync-webtok') || 'null'); if (wt && wt.exp > Date.now() + 60000) { auth.access_token = wt.t; auth.exp = wt.exp; } else needsSignin = true; } catch (e) {} }
     setState(auth ? (navigator.onLine === false ? 'offline' : 'synced') : 'signin', '');
     if (auth && lget('wp-sync-last') === null) setState('syncing', '');

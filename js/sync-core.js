@@ -9,8 +9,9 @@
   var META_KEY = 'wp-sync-meta';
   var FOLDER_NAME = 'Wedding Planner Sync';
   var FILE_NAME = 'Wedding_Planner_sync.json';
-  // Single user: one Android phone + computer, both signed in to the same Google account. The folder is never shared.
-  var EMAILS = { Me: '' };   // filled from the first signed-in account (stored locally), never hard-coded
+  // v1.5 multi-user: everyone works in ONE shared folder (pinned by id in config.js, owned by the organizer and shared with each
+  // person by the organizer in Google Drive). The app never shares anything itself. E-mails are never hard-coded here.
+  var EMAILS = { Me: '' };
 
   function isSynced(key) {
     return typeof key === 'string' && key.indexOf('wp-') === 0 && key.indexOf('wp-sync-') !== 0;
@@ -228,6 +229,10 @@
         var j = await (await call('GET', url)).json();
         return j.files || [];
       },
+      getFile: async function (id) {
+        var j = await (await call('GET', API + 'files/' + encodeURIComponent(id) + '?fields=' + q('id,name,mimeType,trashed,ownedByMe,capabilities(canEdit,canAddChildren)') + '&supportsAllDrives=true')).json();
+        return j;
+      },
       createFolder: async function () {
         var j = await (await call('POST', API + 'files?fields=id,createdTime', { name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' })).json();
         return j;
@@ -271,49 +276,41 @@
     function loadIds() { try { return JSON.parse(deps.rawIO.readRaw(IDS_KEY) || '{}'); } catch (e) { return {}; } }
     function saveIds(o) { deps.rawIO.writeRaw(IDS_KEY, JSON.stringify(o)); }
 
-    function partnerEmails() {
-      var me = (deps.email() || '').toLowerCase();
-      var list = Object.keys(EMAILS).map(function (n) { return String(EMAILS[n] || '').toLowerCase(); }).filter(Boolean);
-      if (list.indexOf(me) < 0) return [];   // unknown account -> don't auto-share
-      return list.filter(function (e) { return e !== me; });
-    }
+    function partnerEmails() { return []; }   // v1.5: the app never shares; the organizer shares the folder in Google Drive
 
+    function noAccess(msg) { var e = new Error(msg); e.noAccess = true; return e; }
     async function ensureFolder() {
       var ids = loadIds();
+      var pinned = deps.folderId ? deps.folderId() : '';
+      if (pinned) {
+        // Shared folder: never create a private copy. No access yet -> clear message (the organizer has to share it).
+        var f;
+        try { f = await drive.getFile(pinned); }
+        catch (e) { if (e.status === 404 || e.status === 403) throw noAccess('NO_ACCESS'); throw e; }
+        if (!f || f.trashed) throw noAccess('NO_ACCESS');
+        if (f.capabilities && f.capabilities.canEdit === false) throw noAccess('READ_ONLY');
+        if (ids.folderId !== pinned) ids = { folderId: pinned, prevFolderId: ids.folderId || '' };
+        saveIds(ids);
+        return ids;
+      }
+      // No pinned folder (tests / private use): oldest folder with the app's name that this account can see; create if none.
       var folders = await drive.listFolders();
-      var known = Object.keys(EMAILS).map(function (n) { return String(EMAILS[n] || '').toLowerCase(); }).filter(Boolean).concat([(deps.email() || '').toLowerCase()]).filter(Boolean);
-      var trusted = folders.filter(function (f) {
-        if (!f.owners || !f.owners.length) return true;
-        return f.owners.some(function (o) { return known.indexOf((o.emailAddress || '').toLowerCase()) >= 0; });
-      });
-      var folder = trusted[0];
+      var folder = folders[0];
       if (!folder) {
         var c = await drive.createFolder();
         folder = { id: c.id, ownedByMe: true, createdTime: c.createdTime };
-        ids = {}; // new folder
+        ids = {};
       }
       if (ids.folderId !== folder.id) { ids = { folderId: folder.id }; }
-      if (folder.ownedByMe) {
-        var shared = Array.isArray(ids.sharedWith) ? ids.sharedWith : [];
-        var todo = partnerEmails().filter(function (e) { return shared.indexOf(e) < 0; });
-        if (todo.length) {
-          try {
-            var perms = await drive.listPermissions(folder.id);
-            for (var i = 0; i < todo.length; i++) {
-              var pe = todo[i];
-              var has = perms.some(function (p) { return (p.emailAddress || '').toLowerCase() === pe; });
-              if (!has) await drive.shareWriter(folder.id, pe);
-              shared.push(pe);
-            }
-          } catch (e) { if (e.status === 401) throw e; /* retry next sync */ }
-          ids.sharedWith = shared;
-        }
-      }
       saveIds(ids);
       return ids;
     }
 
     async function ensureFile(ids) {
+      var pf = deps.fileId ? deps.fileId() : '';
+      if (pf && ids.folderId === (deps.folderId ? deps.folderId() : '')) {
+        try { var g = await drive.getFile(pf); if (g && !g.trashed) { ids.fileId = pf; saveIds(ids); return { id: pf }; } } catch (e) { if (e.status !== 404) throw e; }
+      }
       var f = await drive.findFile(ids.folderId);
       if (!f) { f = await drive.createFile(ids.folderId); f.created = true; }
       ids.fileId = f.id; saveIds(ids);
