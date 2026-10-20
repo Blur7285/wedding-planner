@@ -6,7 +6,7 @@
 
   // Auth is done natively by the local GoogleAuth plugin (Google Identity Services AuthorizationClient; Android OAuth client
   // 749897568298-p53uvvb0sg20rsv7vvg1nctb5jfr3tvh, bound to package + signing SHA-1). Scopes are set in GoogleAuthPlugin.java:
-  // https://www.googleapis.com/auth/drive (+ email, openid). No web redirect, no PKCE, no refresh token, no client secret.
+  // https://www.googleapis.com/auth/drive.file (+ email, openid): non-sensitive, no verification needed. No web redirect, no PKCE, no refresh token, no client secret.
   var TOKEN_TTL = 30 * 60 * 1000;   // reuse a plugin-issued token for at most 30 min within a session (tokens last ~1 h)
   var cap = window.Capacitor || {};
   var native = !!(cap.isNativePlatform && cap.isNativePlatform());
@@ -24,7 +24,7 @@
   function redirectUri() { return location.origin + location.pathname.replace(/index\.html$/, ''); }
   var CFG = window.WP_CONFIG || {};
   function webClientId() { return (CFG.WEB_CLIENT_ID || lget('wp-sync-webclient') || '').trim(); }
-  var GIS_SCOPE = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email';
+  var GIS_SCOPE = 'https://www.googleapis.com/auth/drive.file openid email';
 
   /* ---------- small helpers ---------- */
   function lget(k) { try { return ls.getItem(k); } catch (e) { return null; } }
@@ -84,8 +84,12 @@
   async function accountEmail(token) {
     // only used if the plugin result carries no e-mail: the Drive scope can read the user's own address
     try {
-      var r = await sfetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', { headers: { Authorization: 'Bearer ' + token } });
-      if (r.ok) { var j = await r.json(); return (j.user && j.user.emailAddress) || ''; }
+      var r = await sfetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: 'Bearer ' + token } });
+      if (r.ok) { var j = await r.json(); if (j.email) return j.email; }
+    } catch (e) {}
+    try {
+      var r2 = await sfetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', { headers: { Authorization: 'Bearer ' + token } });
+      if (r2.ok) { var j2 = await r2.json(); return (j2.user && j2.user.emailAddress) || ''; }
     } catch (e) {}
     return '';
   }
@@ -219,14 +223,14 @@
   /* ---------- engine ---------- */
   var drive = S.createDrive({ fetch: sfetch, getToken: getToken, refreshToken: function () { return refresh(true); } });
   var engine = S.createEngine({
-    folderId: function () { return (CFG.SYNC_FOLDER_ID || '').trim(); }, fileId: function () { return (CFG.SYNC_FILE_ID || '').trim(); },
+    folderId: function () { return (CFG.SYNC_FOLDER_ID || '').trim(); }, fileId: function () { return (lget('wp-sync-fileid') || CFG.SYNC_FILE_ID || '').trim(); },
     drive: drive, who: getWho, email: function () { return auth && auth.email || ''; }, now: function () { return Date.now(); },
     rawIO: S.local.rawIO, loadMeta: S.local.loadMeta, saveMeta: S.local.saveMeta, suspend: function (fn) { return fn(); }
   });
 
   /* ---------- status + UI ---------- */
   var state = 'signin', detail = '', running = false, rerun = false, lastRunAt = 0, lastEditAt = 0;
-  var LABEL = { synced: 'Synced', syncing: 'Syncing…', offline: 'Offline', signin: 'Sign in', error: 'Sync error' };
+  var LABEL = { synced: 'Synced', syncing: 'Syncing…', offline: 'Offline', signin: 'Sign in', error: 'Sync error', connect: 'Connect' };
   function setState(s, d) { state = s; detail = d || ''; renderChip(); renderModal(); }
 
   var css = document.createElement('style');
@@ -280,6 +284,43 @@
   var modalMode = 'main';
   function openModal(mode) { modalMode = mode || 'main'; renderModal(); modal.classList.add('active'); }
   function closeModal() { if (modal) modal.classList.remove('active'); }
+  /* ---------- v1.6 one-time "Connect to the family planner" (Google Picker, drive.file) ---------- */
+  var notConnected = false;
+  var BASE_URL = 'https://blur7285.github.io/wedding-planner/';
+  function pickerKey() { return (CFG.PICKER_API_KEY || lget('wp-sync-pickerkey') || '').trim(); }
+  var pickerP = null;
+  function loadPicker() {
+    if (window.google && google.picker) return Promise.resolve();
+    if (!pickerP) pickerP = new Promise(function (res, rej) {
+      var sc = document.createElement('script'); sc.src = 'https://apis.google.com/js/api.js'; sc.async = true;
+      sc.onload = function () { window.gapi.load('picker', { callback: res, onerror: rej }); }; sc.onerror = function () { pickerP = null; rej(new Error('Could not load Google Picker (offline?)')); };
+      document.head.appendChild(sc);
+    });
+    return pickerP;
+  }
+  async function connect() {
+    if (native) {   // Picker can't run inside the Android app's WebView: do the one-time step in the browser; access then works in the app too (same Google project)
+      location.href = BASE_URL + '#connect';   // Capacitor hands non-app URLs to the system browser
+      detail = 'Finish “Connect” in the browser that just opened (sign in with the same Google account), then come back and tap Sync now.'; renderModal(); return;
+    }
+    var key = pickerKey(); if (!key) { setState('connect', 'Paste the Picker API key below first (one-time setup).'); return; }
+    try {
+      var tok = await getToken(); await loadPicker();
+      var P = google.picker, FOLDER = (CFG.SYNC_FOLDER_ID || '').trim();
+      var inFolder = new P.DocsView(P.ViewId.DOCS).setMode(P.DocsViewMode.LIST).setIncludeFolders(true); if (FOLDER) inFolder.setParent(FOLDER);
+      var search = new P.DocsView(P.ViewId.DOCS).setMode(P.DocsViewMode.LIST).setQuery(S.FILE_NAME);
+      var b = new P.PickerBuilder().setAppId(String(CFG.PROJECT_NUMBER || '')).setOAuthToken(tok).setDeveloperKey(key).addView(inFolder).addView(search)
+        .setTitle('Tap “' + S.FILE_NAME + '”, then Select').setOrigin(location.protocol + '//' + location.host).setSize(Math.min(1051, innerWidth - 10), Math.min(650, innerHeight - 40))
+        .setCallback(function (d) {
+          if (d.action !== P.Action.PICKED) return;
+          var doc = d.docs && d.docs[0]; if (!doc) return;
+          if (doc.mimeType === 'application/vnd.google-apps.folder') { setState('connect', 'That is the folder: open it and choose the file “' + S.FILE_NAME + '”.'); return; }
+          if (doc.name !== S.FILE_NAME) { setState('connect', 'Please choose the file named “' + S.FILE_NAME + '”.'); return; }
+          lset('wp-sync-fileid', doc.id); notConnected = false; detail = 'Connected! Syncing…'; runSync('connect');
+        });
+      b.build().setVisible(true);
+    } catch (e) { setState('connect', 'Could not open the file chooser: ' + (e.message || e)); }
+  }
   function renderModal() {
     if (!modal) return;
     var who = getWho(), h;
@@ -291,6 +332,9 @@
         '<div class="sxm-sm">' + (auth ? (needsSignin ? 'Sign-in needed again for ' : 'Signed in as ') + esc(auth.email || 'Google account') : 'Not signed in. The app works on this device; sign in with your Google account to share the plan with everyone else.' + (useRedirect() ? ' You’ll go to Google and come straight back here.' : '')) + '</div>' +
         (last ? '<div class="sxm-sm">Last synced ' + esc(ago(+last)) + '</div>' : '') +
         (detail ? '<div class="' + (state === 'error' ? 'sxm-err' : 'sxm-sm') + '">' + esc(detail) + '</div>' : '') +
+        ((auth && notConnected && !needsSignin) ? '<div class="sxm-sm" style="margin-top:10px"><b>One-time step:</b> connect this Google account to the family planner. A Google window opens; tap <b>' + esc(S.FILE_NAME) + '</b> (in “' + esc(S.FOLDER_NAME) + '”), then <b>Select</b>. If you don’t see it, the organizer hasn’t shared the folder with ' + esc(auth.email || 'you') + ' yet.</div>' +
+          ((web && !CFG.PICKER_API_KEY) ? '<label class="sxm-sm" style="display:block;margin-top:10px">Picker API key (one-time setup)<input id="wp-pickerkey" placeholder="AIza…" value="' + esc(lget('wp-sync-pickerkey') || '') + '" style="margin-top:4px;font-size:13px"></label>' : '') +
+          '<button class="sxm-btn" data-act="connect">Connect to the family planner</button>' : '') +
         (auth ? (needsSignin ? '<button class="sxm-btn" data-act="signin">Sign in again</button>' : '<button class="sxm-btn" data-act="sync">Sync now</button>') + '<button class="sxm-btn alt" data-act="signout">Sign out</button>'
               : ((web && !CFG.WEB_CLIENT_ID) ? '<label class="sxm-sm" style="display:block;margin-top:10px">Web OAuth client ID (one-time setup)<input id="wp-webclient" placeholder="749897568298-….apps.googleusercontent.com" value="' + esc(lget('wp-sync-webclient') || '') + '" style="margin-top:4px;font-size:13px"></label>' : '') +
                 '<button class="sxm-btn" data-act="signin">Sign in with Google</button>') +
@@ -304,6 +348,7 @@
         var a = b.getAttribute('data-act');
         if (a === 'close' || a === 'later') closeModal();
         else if (a === 'signin') signIn();
+        else if (a === 'connect') { var pk = document.getElementById('wp-pickerkey'); if (pk && pk.value.trim()) lset('wp-sync-pickerkey', pk.value.trim()); connect(); }
         else if (a === 'sync') runSync('manual');
         else if (a === 'signout') signOut();
       });
@@ -348,14 +393,15 @@
     running = true; lastRunAt = Date.now(); setState('syncing', '');
     try {
       await refresh();   // silent re-authorize on every sync: fresh ~1 h access token from Google Play services (never shows UI)
-      var r = await engine.sync();
+      var r = await engine.sync(); notConnected = false;
       lset('wp-sync-last', String(Date.now())); needsSignin = false;
       identify(true);
       setState('synced', detail && /Welcome/.test(detail) ? detail : '');
       renderCaptions();
       if (r.changedKeys.length) scheduleReload();
     } catch (e) {
-      if (e.noAccess) setState('error', (e.message === 'READ_ONLY' ? 'This Google account (' + ((auth && auth.email) || '') + ') can only view the shared “' + S.FOLDER_NAME + '” folder. Ask the organizer to make you an Editor.' : 'This Google account (' + ((auth && auth.email) || '') + ') doesn’t have access to the shared “' + S.FOLDER_NAME + '” folder yet. Ask the organizer to share it with this address, then tap Sync now. Your edits are kept on this device until then.'));
+      if (e.noAccess && e.message === 'NOT_CONNECTED') { notConnected = true; setState('connect', ''); if (/signin|manual|connect|open/.test(reason || '') && !modal.classList.contains('active')) openModal(); }
+      else if (e.noAccess) setState('error', (e.message === 'READ_ONLY' ? 'This Google account (' + ((auth && auth.email) || '') + ') can only view the shared “' + S.FOLDER_NAME + '” folder. Ask the organizer to make you an Editor.' : 'This Google account (' + ((auth && auth.email) || '') + ') doesn’t have access to the shared “' + S.FOLDER_NAME + '” folder yet. Ask the organizer to share it with this address, then tap Sync now. Your edits are kept on this device until then.'));
       else if (e.offline || (navigator.onLine === false)) setState('offline', 'No connection — will retry.');
       else if (e.signin || e.status === 401) { needsSignin = true; setState('signin', 'Google sign-in expired — ' + (native ? 'tap' : 'click') + ' “Sign in again” to continue syncing. Your data on this device is safe.'); }
       else {
@@ -413,7 +459,7 @@
   setInterval(function () { if (auth && !document.hidden && Date.now() - lastRunAt > 120000) runSync('poll'); }, 30000);
 
   /* ---------- startup ---------- */
-  function startup2() { if (auth) setTimeout(function () { runSync('open'); }, 600); }
+  function startup2() { if (auth) setTimeout(function () { runSync('open'); }, 600); else if (/^#connect/.test(location.hash) && modal) openModal(); }
   async function start() {
     mountHeader(); mountModal(); renderCaptions();
     auth = authLoad();

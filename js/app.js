@@ -2,7 +2,7 @@
    which the Scout sync engine (sync-hook / sync-core / sync-app) merges per item through Google Drive. */
 (function () {
   'use strict';
-  var VERSION = '1.5';
+  var VERSION = '1.6';
   var $ = function (s, r) { return (r || document).querySelector(s); };
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function load(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }

@@ -282,15 +282,17 @@
     async function ensureFolder() {
       var ids = loadIds();
       var pinned = deps.folderId ? deps.folderId() : '';
-      if (pinned) {
-        // Shared folder: never create a private copy. No access yet -> clear message (the organizer has to share it).
+      var pinFile = deps.fileId ? deps.fileId() : '';
+      if (pinned || pinFile) {
+        // v1.6 (drive.file scope): the app only sees the shared data file once the user has "connected" it (Google Picker).
+        // Never create a private copy, never touch the folder itself. No access -> NOT_CONNECTED (UI offers the one-time Connect step).
         var f;
-        try { f = await drive.getFile(pinned); }
-        catch (e) { if (e.status === 404 || e.status === 403) throw noAccess('NO_ACCESS'); throw e; }
-        if (!f || f.trashed) throw noAccess('NO_ACCESS');
+        try { f = await drive.getFile(pinFile); }
+        catch (e) { if (e.status === 404 || e.status === 403) throw noAccess('NOT_CONNECTED'); throw e; }
+        if (!f || f.trashed) throw noAccess('NOT_CONNECTED');
         if (f.capabilities && f.capabilities.canEdit === false) throw noAccess('READ_ONLY');
-        if (ids.folderId !== pinned) ids = { folderId: pinned, prevFolderId: ids.folderId || '' };
-        saveIds(ids);
+        if (ids.fileId !== pinFile) ids = { folderId: pinned || 'pinned', fileId: pinFile, prevFolderId: ids.folderId || '' };
+        ids.pinnedFile = true; saveIds(ids);
         return ids;
       }
       // No pinned folder (tests / private use): oldest folder with the app's name that this account can see; create if none.
@@ -307,10 +309,7 @@
     }
 
     async function ensureFile(ids) {
-      var pf = deps.fileId ? deps.fileId() : '';
-      if (pf && ids.folderId === (deps.folderId ? deps.folderId() : '')) {
-        try { var g = await drive.getFile(pf); if (g && !g.trashed) { ids.fileId = pf; saveIds(ids); return { id: pf }; } } catch (e) { if (e.status !== 404) throw e; }
-      }
+      if (ids.pinnedFile) return { id: ids.fileId };
       var f = await drive.findFile(ids.folderId);
       if (!f) { f = await drive.createFile(ids.folderId); f.created = true; }
       ids.fileId = f.id; saveIds(ids);
