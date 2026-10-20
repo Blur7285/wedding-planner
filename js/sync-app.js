@@ -332,6 +332,7 @@
           lset('wp-sync-fileid', doc.id); notConnected = false; detail = 'Connected! Syncing…'; runSync('connect');
         });
       b.build().setVisible(true);
+      detail = 'If Google shows “403” in that window: (1) the planner’s Google key must allow https://docs.google.com/* (organizer fix in Google Cloud), or (2) this browser is signed in to Google with a different account first: open the planner in a window where ' + (auth && auth.email || 'your account') + ' is the only/first Google account (e.g. an InPrivate window), sign in, and Connect again.'; renderModal();
     } catch (e) { setState('connect', 'Could not open the file chooser: ' + (e.message || e)); }
   }
   function renderModal() {
