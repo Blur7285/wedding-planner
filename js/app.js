@@ -2,7 +2,7 @@
    which the Scout sync engine (sync-hook / sync-core / sync-app) merges per item through Google Drive. */
 (function () {
   'use strict';
-  var VERSION = '1.6.3';
+  var VERSION = '1.7';
   var $ = function (s, r) { return (r || document).querySelector(s); };
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function load(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }
@@ -283,7 +283,7 @@
       cd = days >= 0 ? '<div class="count"><div><b>' + Math.floor(days / 30.4) + '</b><small>months</small></div><div><b>' + days + '</b><small>days</small></div><div><b>' + Math.floor(days / 7) + '</b><small>weeks</small></div></div>' : '<div class="count"><div><b>&#9829;</b><small>Married!</small></div></div>';
     }
     var when = s.date ? fmtD(s.date) : (s.dateFrom ? 'Tentatively ' + fmtD(s.dateFrom) + (s.dateTo ? ' – ' + fmtD(s.dateTo) : '') : (s.season ? 'Target: ' + esc(s.season) : 'Date not set yet'));
-    var h = '<div class="card hero"><h1 class="names">' + esc(couple()) + '</h1><div class="when">' + when + (s.location ? ' · ' + esc(s.location) : '') + '</div>' + cd +
+    var h = '<div class="card hero"><h1 class="names">' + esc(couple()) + '</h1><div class="when">' + when + ((s.location || WL().short) ? ' · ' + esc(s.location || (wlocKey() === 'fk' ? 'Meadow wedding · Floyds Knobs, IN' : WL().short)) : '') + '</div>' + cd +
       (!s.date ? '<div style="margin-top:14px"><a class="btn sm alt" href="#settings">Set the date</a></div>' : '') + '</div>';
     if (sd < steps.length) h += '<a href="#start" style="text-decoration:none;color:inherit"><div class="card"><div class="stat"><div class="k">Getting started</div><div class="v">' + sd + ' of ' + steps.length + ' first steps</div></div>' + bar(steps.length ? sd / steps.length * 100 : 0) + '<div class="m sub" style="margin:8px 0 0">Next: ' + esc((steps.filter(function (x) { return !x.done; })[0] || {}).title || '') + ' &rsaquo;</div></div></a>';
     h += '<div class="grid2"><div class="card stat"><div class="k">Budget used</div><div class="v">' + (tot ? money(spent) : '—') + '</div><div class="m sub" style="margin:2px 0 0">' + (tot ? 'of ' + money(tot) + ' · ' + money(paid) + ' paid' : 'Set a budget') + '</div>' + bar(tot ? spent / tot * 100 : 0, tot && spent > tot) + '</div>' +
@@ -478,14 +478,14 @@
   function activityCard() {
     var meta = load('wp-sync-meta', {}), rows = Object.keys(meta).map(function (k) { return [k.split('#')[0], meta[k]]; }).filter(function (x) { return x[1] && x[1].t > 0; }).sort(function (a, b) { return b[1].t - a[1].t; });
     var seen = {}, out = []; rows.forEach(function (r) { var key = r[0] + '|' + r[1].by; if (seen[key] || out.length >= 8) return; seen[key] = 1; out.push(r); });
-    var NAMES = { 'wp-tasks': 'Timeline', 'wp-budget': 'Budget', 'wp-payments': 'Payments', 'wp-guests': 'Guests', 'wp-tables': 'Seating', 'wp-vendors': 'Vendors', 'wp-venues': 'Venues', 'wp-settings': 'Settings', 'wp-people': 'People', 'wp-profile': 'Wedding journey', 'wp-menu': 'Menu', 'wp-honey': 'Honeymoon', 'wp-hm-itin': 'Itinerary', 'wp-hm-book': 'Bookings', 'wp-lists': 'Checklists', 'wp-decisions': 'Decisions', 'wp-ideas': 'Mood boards', 'wp-schedule': 'Day-of' };
+    var NAMES = { 'wp-tasks': 'Timeline', 'wp-budget': 'Budget', 'wp-payments': 'Payments', 'wp-guests': 'Guests', 'wp-tables': 'Seating', 'wp-vendors': 'Vendors', 'wp-venues': 'Venues', 'wp-settings': 'Settings', 'wp-people': 'People', 'wp-profile': 'Wedding journey', 'wp-menu': 'Menu', 'wp-honey': 'Honeymoon', 'wp-hm-itin': 'Itinerary', 'wp-hm-book': 'Bookings', 'wp-lists': 'Checklists', 'wp-decisions': 'Decisions', 'wp-ideas': 'Mood boards', 'wp-schedule': 'Day-of', 'wp-suggestions': 'Suggestions' };
     return '<div class="card" id="activity-card"><h3>🕒 Recent edits</h3>' + (out.length ? '<ul class="act">' + out.map(function (r) { return '<li><b>' + esc(r[1].by || 'Someone') + '</b> edited <span>' + esc(NAMES[r[0]] || r[0].replace('wp-', '')) + '</span><small>' + esc(new Date(r[1].t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '</small></li>'; }).join('') + '</ul>' : '<p class="empty">Edits from everyone will show here after syncing.</p>') + '</div>';
   }
   function pSettings() {
     var s = S();
     var h = head('Settings', 'Everything is editable. Leave fields blank until you know them.');
     h += '<div class="card">' + SF.concat(VISION).map(function (f) { return field(f, s[f.k]); }).join('') + '<button class="btn" id="save-settings" style="width:100%">Save settings</button></div>';
-    h += locCard(s) + peopleCard() + activityCard() + '<p class="sub" id="legal-links" style="text-align:center;margin:18px 0 8px"><a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a> · <a href="terms.html" target="_blank" rel="noopener">Terms of use</a></p>';
+    h += locCard(s) + peopleCard() + activityCard() + '<div class="card"><h3>Help & ideas</h3><p><a class="btn" href="#help">❓ How to use this app</a> <a class="btn" href="#suggest" id="set-suggest">💡 Suggest a change</a></p></div><p class="sub" id="legal-links" style="text-align:center;margin:18px 0 8px"><a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a> · <a href="terms.html" target="_blank" rel="noopener">Terms of use</a></p>';
     h += '<div class="card"><h3>Sync (everyone, all devices)</h3><p class="sub" style="margin:6px 0 10px">Tap <b>Sign in</b> at the top and use your own Google account. Everyone’s changes go to one shared “Wedding Planner Sync” folder in Google Drive (shared by the organizer), and edits merge item by item.</p>' +
       '<div class="kv"><span>Signed in as</span><b>' + esc((function () { try { return JSON.parse(localStorage.getItem('wp-sync-account') || '{}').email || 'Not signed in'; } catch (e) { return 'Not signed in'; } })()) + '</b></div><div class="kv"><span>You appear as</span><b>' + esc(localStorage.getItem('wp-sync-me') || '—') + '</b></div></div>';
     h += '<div class="card"><h3>Backup & export</h3><p class="sub" style="margin:6px 0 10px">A JSON backup contains everything and can be restored on the phone or the computer.</p>' +
@@ -569,6 +569,23 @@
   }
   /* ---------- v1.5: wedding location + couple's home (settings-driven local content) ---------- */
   var WLOC = {
+    fk: { label: 'Floyds Knobs, IN (outdoor meadow, private property)', short: 'Floyds Knobs / Louisville',
+      est: [['Lower-cost area', 0.85], ['Floyds Knobs / Southern Indiana', 0.9], ['Louisville metro', 1], ['Upscale Louisville venue', 1.25]], estDef: 'Floyds Knobs / Southern Indiana',
+      vtypes: ['Meadow at a private home (our plan)', 'Tented reception on the lawn', 'Barn / farm', 'Winery / vineyard', 'Ohio River view / riverfront', 'Historic mansion or estate', 'Distillery / bourbon-country venue', 'Restaurant', 'Church / chapel', 'Hotel ballroom'],
+      seasons: { Spring: 'Redbuds and dogwoods, but spring storms and severe-weather watches: a tent with sides and a shelter plan are a must.', Summer: 'Hot and humid with pop-up thunderstorms: shade, fans, cold water, bug control and an evening ceremony help.', Fall: 'Most comfortable for an outdoor meadow: mild days, fall color, fewer bugs. Great produce for veg menus.', Winter: 'Too cold and wet for an open meadow; only with a heated, floored tent.' },
+      jseasons: { Spring: 'Redbuds & spring storms', Summer: 'Long, hot & humid evenings', Fall: 'Fall color in the knobs', Winter: 'Heated tent only' },
+      storm: 'Southern Indiana gets pop-up summer thunderstorms and spring severe-weather watches. For a meadow wedding, rent a tent with sidewalls, set a weather-call deadline and know where guests shelter (the house, cars).',
+      sugg: [['Book the tent & rentals early', 'For an outdoor wedding at a private home the tent, tables, chairs, flooring and lighting are the venue: get quotes first and confirm a site visit to the meadow.', ''],
+        ['Plan restrooms, power and parking', 'Portable restroom trailer, a quiet generator (or a licensed electrician) and a parking/shuttle plan for guests: see the “Outdoor wedding at a private home” checklist in Tips & guides.', ''],
+        ['Get the license from Indiana', 'The ceremony is in Indiana, so the marriage license comes from Indiana (e.g. the Floyd County clerk), not Kentucky.', '']],
+      vq: ['Tent site visit: is the meadow level, firm and drained? Where do trucks unload?', 'Rain plan: tent sidewalls, flooring, and where do guests shelter in a storm?'],
+      rain: ' For the meadow: book a tent with sidewalls (and flooring if the ground is soft), have a weather-call time the day before, and plan shelter in the house or cars if there is lightning.',
+      guides: [
+        ['🌾', 'Planning the Floyds Knobs meadow wedding', 'The ceremony and reception are planned outdoors in a meadow at the family home in Floyds Knobs, Indiana, in the knobs above New Albany and across the Ohio River from Louisville. With a private-property wedding you bring in everything a venue normally provides: tent, tables and chairs, restrooms, power, lighting, catering setup, parking and cleanup. Do a walk-through of the meadow with each vendor, check access for delivery trucks and how far guests walk from parking, and set aside budget for rentals (often the largest line after food). Score options in Compare & score if you also look at a backup venue.'],
+        ['✅', 'Outdoor wedding at a private home: checklist', '☐ Tent & rain plan: tent big enough for seated dinner plus dance floor and buffet; sidewalls; flooring if the ground is soft; weather-call deadline; lightning shelter (house, cars).\n☐ Parking: where guests park (field, neighbors, nearby lot) and whether you need attendants or a shuttle; lighting and signs for the walk; accessible drop-off near the meadow.\n☐ Restrooms: portable restroom trailer or units (rule of thumb from rental companies: about one per 50 guests for a few hours; ask your vendor), handwashing, placed near but not too close to dining.\n☐ Power: what the house can supply vs. a quiet generator; caterer, band/DJ, lighting and fans all need power; run cords safely and keep the generator away from the ceremony.\n☐ Lighting: string or bistro lights for the tent, path lights to parking and restrooms, backup flashlights.\n☐ Bugs & weather comfort: mow and treat the meadow a few days ahead, bug spray and fans; shade and water in summer; heaters or blankets for cool fall nights.\n☐ Neighbors: tell them the date, music end time and parking plan; invite or thank them.\n☐ Permits & insurance: ask Floyd County / the township about any rules for large private gatherings, tents, amplified sound or road parking; get one-day wedding event insurance; ask vendors for proof of insurance; check the homeowners policy.\n☐ Food & trash: caterer kitchen/prep area (tent or garage), water source, trash and recycling pickup, and who cleans up the next day.'],
+        ['✈️', 'Guest travel: getting to Floyds Knobs', 'Out-of-town guests usually fly into Louisville Muhammad Ali International Airport (SDF), about a 25–35 minute drive to Floyds Knobs (estimate; depends on traffic and bridges). Cincinnati (CVG) and Indianapolis (IND) are farther options, roughly 1.5–2 hours away by car. Hotels are in New Albany, Clarksville/Jeffersonville and downtown Louisville; a hotel room block plus a shuttle to the meadow cuts down on parking and late-night driving. Check big event weekends (e.g. Derby season in spring), which fill Louisville hotels.'],
+        ['🤝', 'Local vendor types to line up (Louisville / Southern Indiana)', 'Categories to search for and get quotes from (we don’t list specific businesses here; add the ones you choose in Vendors):\n• Tent & party rentals (tent, tables, chairs, flooring, dance floor, lighting)\n• Portable restroom trailer / sanitation rental\n• Generator rental or a licensed electrician for outdoor power\n• Caterers comfortable with a fully vegetarian menu and with off-site/outdoor service (ask about a prep tent and water needs)\n• Bartending service with its own liquor liability insurance\n• Mosquito/yard treatment service and lawn mowing\n• Parking attendants or a shuttle bus / van service\n• Day-of coordinator experienced with private-property weddings']],
+      },
     cos: { label: 'Colorado Springs, CO', short: 'Colorado Springs',
       est: [['Lower-cost area', 0.85], ['Colorado Springs', 1], ['Denver / Boulder', 1.2], ['Mountain resort town', 1.35]], estDef: 'Colorado Springs',
       vtypes: ['Mountain lodge', 'Ranch / barn', 'Red rocks (Garden of the Gods area)', 'Resort hotel (Broadmoor-style)', 'Brewery / taproom', 'Restaurant', 'Park / public land (permit)', 'Botanical garden', 'Loft / warehouse', 'Museum / gallery', 'Backyard', 'Hotel ballroom'],
@@ -607,7 +624,7 @@
     nalb: { label: 'New Albany, IN (Louisville metro)', air: 'SDF', note: 'Louisville (SDF), most routes with one connection' },
     other: { label: 'Other', air: '', note: '' }
   };
-  function wlocKey() { var k = S().wloc; return WLOC[k] ? k : 'cos'; }
+  function wlocKey() { var k = S().wloc; return WLOC[k] ? k : 'fk'; }
   function WL() { var k = wlocKey(), o = WLOC[k]; if (k === 'other') { var t = (S().wlocText || '').trim(); return Object.assign({}, o, { label: t || 'Other', short: t }); } return o; }
   function homeKey() { var k = S().home; return HOMES[k] ? k : 'cos'; }
   function HL() { var k = homeKey(), o = HOMES[k]; if (k === 'other') { var t = (S().homeText || '').trim(); return Object.assign({}, o, { label: t || 'Other' }); } return o; }
@@ -1136,7 +1153,7 @@
     var h = '<div class="tipbar">💡 <b>Tip of the day:</b> ' + esc(tip) + '</div>';
     var days = a.d ? daysBetween(today(), a.d) : null;
     var when = s.date ? fmtD(s.date) : (s.dateFrom ? 'Tentatively ' + fmtD(s.dateFrom) : (s.season ? 'Dreaming of ' + esc(s.season) : 'Date to be decided'));
-    h += '<div class="hero2">' + ART + '<div class="hero2-in"><div class="kick">The wedding of</div><h1 class="names">' + esc(couple()) + '</h1><div class="when">' + when + (s.location ? ' · ' + esc(s.location) : '') + '</div>' +
+    h += '<div class="hero2">' + ART + '<div class="hero2-in"><div class="kick">The wedding of</div><h1 class="names">' + esc(couple()) + '</h1><div class="when">' + when + ((s.location || WL().short) ? ' · ' + esc(s.location || (wlocKey() === 'fk' ? 'Meadow wedding · Floyds Knobs, IN' : WL().short)) : '') + '</div>' +
       (days != null && days >= 0 ? '<div class="cdown" data-cd="' + iso(a.d) + '">' + ['days', 'hours', 'min', 'sec'].map(function (u) { return '<div><b data-u="' + u + '">–</b><small>' + u + '</small></div>'; }).join('') + '</div>' : (days != null ? '<div class="cdown"><div><b>♥</b><small>married!</small></div></div>' : '<div class="nodate"><a class="btn" href="#start">Start our wedding profile</a><a class="btn alt" href="#settings">Set the date</a></div>')) + '</div></div>';
     var ph = phaseNow(), phName = ph && ph !== 'after' ? (GROUPS.filter(function (g) { return g[0] === ph; })[0] || [])[1] : null;
     h += '<div class="grid2 stats4">' + [['Budget', tot ? money(tot) : '—', tot ? money(spent) + ' committed' : 'set in profile', '#budget'], ['Guests', gc.invited || (S().guestEst ? '~' + S().guestEst : '—'), gc.yes + ' attending · ' + gc.pending + ' pending', '#guests'], ['Phase', phName || 'Dreaming', phName ? 'tasks are due now' : 'no date yet — relative timeline', '#timeline'], ['Menu', load('wp-menu', []).filter(function (m) { return m.pick; }).length + ' dishes', '100% vegetarian', '#menu']].map(function (x) { return '<a class="card stat lift" href="' + x[3] + '"><div class="k">' + x[0] + '</div><div class="v">' + x[1] + '</div><div class="m sub" style="margin:2px 0 0">' + x[2] + '</div></a>'; }).join('') + '</div>';
@@ -1208,7 +1225,7 @@
     h += '<div><div class="card"><h3>📞 Who to call</h3>' + (vs.length ? vs.map(function (v) { return '<div class="kv"><span>' + esc(v.cat) + ' — ' + esc(v.name || '') + '</span><b>' + (v.phone ? '<a class="lnk" href="tel:' + esc(v.phone) + '">' + esc(v.phone) + '</a>' : '') + '</b></div>'; }).join('') : '<p class="sub">Booked vendors with phone numbers appear here.</p>') + '</div>' + listCard(LISTS[0]) + '</div></div>';
     return h;
   }
-  var MORE = [['start', '💞', 'Wedding journey'], ['compare', '⚖️', 'Compare & score'], ['menu', '🥗', 'Vegetarian menu'], ['vendors', '🤝', 'Vendors'], ['seating', '🪑', 'Seating'], ['dayof', '⏱️', 'Day-of'], ['ideas', '🎨', 'Mood boards'], ['honeymoon', '🌴', 'Honeymoon'], ['lists', '✅', 'Checklists'], ['guides', '📚', 'Tips & guides'], ['decisions', '✍️', 'Decisions'], ['settings', '⚙️', 'Settings & sync']];
+  var MORE = [['help', '❓', 'How to use this app'], ['suggest', '💡', 'Suggest a change'], ['start', '💞', 'Wedding journey'], ['compare', '⚖️', 'Compare & score'], ['menu', '🥗', 'Vegetarian menu'], ['vendors', '🤝', 'Vendors'], ['seating', '🪑', 'Seating'], ['dayof', '⏱️', 'Day-of'], ['ideas', '🎨', 'Mood boards'], ['honeymoon', '🌴', 'Honeymoon'], ['lists', '✅', 'Checklists'], ['guides', '📚', 'Tips & guides'], ['decisions', '✍️', 'Decisions'], ['settings', '⚙️', 'Settings & sync']];
   function pMore() { return heroBand('♡', 'Everything', 'All planning tools in one place.') + '<div class="tiles">' + MORE.map(function (m) { return '<a class="tile" href="#' + m[0] + '"><span>' + m[1] + '</span><b>' + m[2] + '</b></a>'; }).join('') + '</div>'; }
 
   /* ---------- live countdown ---------- */
@@ -1419,8 +1436,37 @@
     var f = $('#j-fine', el); if (f) f.onclick = function () { showFine = !showFine; render(); };
   }
 
-  var PAGES = { menu: pMenu, overview: pOverview, start: pStart, timeline: pTimeline, budget: pBudget, vendors: pVendors, guests: pGuests, seating: pSeating, dayof: pDayof, ideas: pIdeas, decisions: pDecisions, settings: pSettings, more: pMore, compare: pCompare, lists: pLists, honeymoon: pHoneymoon, guides: pGuides };
-  var TABOF = { compare: 'more', lists: 'more', honeymoon: 'more', guides: 'more', menu: 'more', start: 'more', vendors: 'more', seating: 'more', dayof: 'more', ideas: 'more', decisions: 'more', settings: 'more' };
+
+  /* ---------- v1.7: Suggest a change + How to use this app ---------- */
+  var SUG_AREAS = ['Layout', 'New section', 'Content', 'Other'], SUG_ST = { 'new': 'New', planned: 'Planned', done: 'Done' };
+  function meInfo() { var em = ''; try { em = JSON.parse(localStorage.getItem('wp-sync-account') || '{}').email || ''; } catch (e) {} var nm = localStorage.getItem('wp-sync-me') || ''; return { email: em, name: nm || (em ? em.split('@')[0] : '') }; }
+  function pSuggest() {
+    var me = meInfo(), list = load('wp-suggestions', []).slice().sort(function (a, b) { return (b.date || 0) - (a.date || 0); });
+    var h = heroBand('💡', 'Suggest a change', 'Want something different in the planner? Tell us here: everyone sees the list.');
+    h += '<div class="card" id="sug-form"><h3>New suggestion</h3>' +
+      '<div class="kv"><span>From</span><b>' + esc(me.name ? me.name + (me.email ? ' (' + me.email + ')' : '') : 'Not signed in: add your name below') + '</b></div>' +
+      (me.name ? '' : '<label class="f">Your name<input id="sug-name" placeholder="Your name"></label>') +
+      '<label class="f">What would you like changed?<textarea id="sug-text" rows="4" placeholder="e.g. Add a page for the rehearsal dinner"></textarea></label>' +
+      '<label class="f">Area (optional)<select id="sug-area"><option value="">Choose…</option>' + SUG_AREAS.map(function (a) { return '<option>' + a + '</option>'; }).join('') + '</select></label>' +
+      '<button class="btn" id="sug-send" type="button">Send suggestion</button></div>';
+    h += '<div class="card" id="sug-list"><h3>Suggestions so far</h3>' + (list.length ? '<ul class="sug">' + list.map(function (x) {
+      return '<li><div class="sug-t">' + esc(x.text) + '</div><div class="sug-m">' + esc(x.by || 'Someone') + ' · ' + esc(new Date(x.date || 0).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })) + (x.area ? ' · ' + esc(x.area) : '') +
+        ' <select data-sugst="' + x.id + '" class="sug-st st-' + esc(x.status || 'new') + '">' + Object.keys(SUG_ST).map(function (k) { return '<option value="' + k + '"' + ((x.status || 'new') === k ? ' selected' : '') + '>' + SUG_ST[k] + '</option>'; }).join('') + '</select></div></li>'; }).join('') + '</ul>' : '<p class="empty">No suggestions yet. Be the first!</p>') + '</div>';
+    return h;
+  }
+  var HELP = [
+    ['📱', 'Save it and reopen it', 'Do this once so the planner is one tap away, like an app.\n\niPhone (Safari):\n1. Open https://blur7285.github.io/wedding-planner/ in Safari.\n2. Tap the Share button (the square with an arrow pointing up).\n3. Scroll down and tap “Add to Home Screen”, then tap “Add”.\n4. From now on, tap the new “Wedding” icon on your home screen to open it.\n\nAndroid (Chrome):\n1. Open the same link in Chrome.\n2. Tap the ⋮ menu (top right).\n3. Tap “Add to Home screen” or “Install app”, then “Install”/“Add”.\n4. Open it from the new icon. (If you were sent the Wedding Planner Android app instead, just open that app.)\n\nComputer (Edge or Chrome):\n1. Open the same link.\n2. Either bookmark it (Ctrl+D, or ⌘+D on a Mac), or click the “Install app” icon at the right end of the address bar (in Edge you can also use ⋯ > Apps > Install this site as an app).\n3. Next time, open it from the bookmark, the Start menu or the desktop icon.\n\nYour plans stay saved: everything is kept on your device and synced to the shared planner, so closing the app, the browser or your phone loses nothing. When you reopen it, it syncs again by itself.\n\nAsked to sign in again? That’s normal now and then (Google sign-ins expire, especially on iPhone and computers). Tap “Sign in again” and pick the same Google account; nothing is lost, and you don’t need to “Connect” again.'],
+    ['🔐', 'Sign in with Google', 'Tap “Sign in” at the top, then “Sign in with Google”, and choose your own Google account (the one the planner was shared with). On iPhone you go to Google’s page and come straight back.'],
+    ['🔗', 'One time only: Connect to the family planner', 'After your first sign-in, tap “Connect to the family planner”. A Google window opens: tap the file “Wedding_Planner_sync.json” (in the “Wedding Planner Sync” folder), then “Select”. You only do this once per Google account. If you don’t see the file, the folder hasn’t been shared with your account yet.'],
+    ['🔄', 'How sync works', 'Everything you change is saved on your device right away and synced to the shared planner in Google Drive whenever you’re online (tap ↻ to sync now). Changes merge item by item, so two people editing at the same time don’t erase each other’s work; if you both change the same item, the newest edit wins. “Last updated by” and Settings → Recent edits show who changed what.'],
+    ['✨', 'Make it yours', 'Settings: names, date, wedding location, couple’s home (for honeymoon flights) and the People list (everyone planning together). The Wedding journey and the chips on each page tailor ideas, tasks and budget to you. Everything works offline too.'],
+    ['💡', 'Suggest a change', 'Want something added or changed? Tap “💡 Suggest” (bottom corner) or Settings → Suggest a change, describe it and tap “Send suggestion”. Everyone can see the list and its status (New, Planned, Done).']
+  ];
+  function pHelp() {
+    return heroBand('❓', 'How to use this app', 'A quick guide for everyone planning together.') + '<div class="card help">' + HELP.map(function (x, i) { return '<div class="help-i"><h3>' + x[0] + ' ' + (i + 1) + '. ' + esc(x[1]) + '</h3><p>' + esc(x[2]).replace(/\n/g, '<br>').replace(/https:\/\/blur7285\.github\.io\/wedding-planner\//, '<b>https://blur7285.github.io/wedding-planner/</b>') + '</p></div>'; }).join('') + '<p><a class="btn" href="#suggest">💡 Suggest a change</a></p></div>';
+  }
+  var PAGES = { menu: pMenu, overview: pOverview, start: pStart, timeline: pTimeline, budget: pBudget, vendors: pVendors, guests: pGuests, seating: pSeating, dayof: pDayof, ideas: pIdeas, decisions: pDecisions, settings: pSettings, more: pMore, suggest: pSuggest, help: pHelp, compare: pCompare, lists: pLists, honeymoon: pHoneymoon, guides: pGuides };
+  var TABOF = { suggest: 'more', help: 'more', compare: 'more', lists: 'more', honeymoon: 'more', guides: 'more', menu: 'more', start: 'more', vendors: 'more', seating: 'more', dayof: 'more', ideas: 'more', decisions: 'more', settings: 'more' };
   function cur() { var h = (location.hash || '#overview').slice(1); return PAGES[h] ? h : 'overview'; }
   var lastPage = '';
   function render() {
@@ -1435,6 +1481,14 @@
     bind(el); richBind(el); startBind(el); honeyBind(el);
   }
   function bind(el) {
+    var ss = el.querySelector('#sug-send'); if (ss) ss.addEventListener('click', function () {
+      var t = (el.querySelector('#sug-text').value || '').trim(); if (!t) { el.querySelector('#sug-text').focus(); return; }
+      var me = meInfo(), nmI = el.querySelector('#sug-name'), by = me.name || (nmI && nmI.value.trim()) || 'Someone';
+      if (localStorage.getItem('wp-suggestions') === null) save('wp-suggestions', []);   // baseline first, so the new item is a stamped edit that always syncs
+      var a = load('wp-suggestions', []); a.push({ id: 's_' + uid(), text: t, area: el.querySelector('#sug-area').value || '', by: by, email: me.email || '', date: Date.now(), status: 'new' });
+      save('wp-suggestions', a); render(); if (typeof toast === 'function') toast('Thanks! Suggestion saved');
+    });
+    el.querySelectorAll('[data-sugst]').forEach(function (sel) { sel.addEventListener('change', function () { var id = sel.getAttribute('data-sugst'); save('wp-suggestions', load('wp-suggestions', []).map(function (x) { return x.id === id ? Object.assign({}, x, { status: sel.value }) : x; })); render(); }); });
     el.querySelectorAll('[data-tg]').forEach(function (b) { b.addEventListener('change', function () { C[b.getAttribute('data-tg')].toggle(b.getAttribute('data-id'), ({ payments: 'paid', menu: 'pick' })[b.getAttribute('data-tg')] || 'done'); }); });
     el.querySelectorAll('[data-op]').forEach(function (b) { b.addEventListener('click', function () { C[b.getAttribute('data-op')].open(b.getAttribute('data-id')); }); });
     el.querySelectorAll('[data-add]').forEach(function (b) { b.addEventListener('click', function () { var k = b.getAttribute('data-add'); C[k].add(k === 'tasks' ? { g: '12', off: 365, owner: 'Couple', done: false } : k === 'decisions' ? { date: iso(today()), status: 'Decided' } : k === 'priorities' ? { rank: load('wp-priorities', []).length + 1 } : {}); }); });

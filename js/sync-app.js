@@ -373,7 +373,7 @@
 
   /* ---------- section captions ---------- */
   var SECTIONS = {
-    overview: ['*'], settings: ['wp-settings'], decisions: ['wp-decisions'], timeline: ['wp-tasks'], budget: ['wp-budget', 'wp-payments'],
+    overview: ['*'], settings: ['wp-settings'], suggest: ['wp-suggestions'], decisions: ['wp-decisions'], timeline: ['wp-tasks'], budget: ['wp-budget', 'wp-payments'],
     vendors: ['wp-vendors'], compare: ['wp-venues', 'wp-weights'], lists: ['wp-lists'], honeymoon: ['wp-honey', 'wp-hm-itin', 'wp-hm-book', 'wp-lists'], start: ['wp-profile'], menu: ['wp-menu', 'wp-meals'], guests: ['wp-guests'], seating: ['wp-tables', 'wp-guests'], dayof: ['wp-schedule'], ideas: ['wp-ideas']
   };
   function renderCaptions() {
