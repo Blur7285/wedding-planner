@@ -6,8 +6,8 @@
    PROJECT_NUMBER: Google Cloud project number (the Picker grants the chosen file to this app).
    SYNC_FOLDER_ID / SYNC_FILE_ID: the shared "Wedding Planner Sync" folder and its data file. */
 window.WP_CONFIG = {
-  WEB_CLIENT_ID: '',
-  PICKER_API_KEY: '',
+  WEB_CLIENT_ID: '749897568298-375rukt0jdst30qk1bhdbrvv366gkqkl.apps.googleusercontent.com',
+  PICKER_API_KEY: 'AIzaSyCApkAluzvT1XRvHkhi0aVaN7gdvaaq8g4',
   PROJECT_NUMBER: '749897568298',
   SYNC_FOLDER_ID: '1IgPWFlCCccFFK82Q9z_ru2IUD_pe6rtn',
   SYNC_FILE_ID: '172BSAeagqLHFjhumKZTOKtoLfrYwCZLk'

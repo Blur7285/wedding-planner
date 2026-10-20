@@ -1,6 +1,6 @@
 /* Wedding Planner service worker: network-first (updates show up immediately when online),
    versioned cache as the offline fallback. Never touches Google sign-in / Drive requests. */
-var VERSION = '1.6.0';
+var VERSION = '1.6.1';
 var CACHE = 'wp-' + VERSION;
 var CORE = ['./', './index.html', './manifest.webmanifest', './css/app.css', './css/fonts.css', './js/oauth-return.js', './js/config.js', './js/sync-core.js', './js/sync-hook.js', './js/sync-app.js', './js/backup.js', './js/app.js', './icons/icon-192.png', './icons/icon-512.png'];
 self.addEventListener('install', function (e) {
