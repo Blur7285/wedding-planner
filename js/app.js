@@ -2,7 +2,7 @@
    which the Scout sync engine (sync-hook / sync-core / sync-app) merges per item through Google Drive. */
 (function () {
   'use strict';
-  var VERSION = '1.7';
+  var VERSION = '1.7.1';
   var $ = function (s, r) { return (r || document).querySelector(s); };
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function load(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }
@@ -841,9 +841,16 @@
     var a = []; LISTS.forEach(function (l) { l[2].forEach(function (t, i) { a.push({ id: l[0] + (i + 1), list: l[0], title: t, done: false }); }); });
     save('wp-lists', a);
   }
+  var kitOpen = false;
+  document.addEventListener('toggle', function (e) { if (e.target && e.target.classList && e.target.classList.contains('kitbox')) kitOpen = e.target.open; }, true);
+  window.addEventListener('beforeprint', function () { document.querySelectorAll('details.kitbox').forEach(function (d) { d.setAttribute('data-wasopen', d.open ? '1' : ''); d.open = true; }); });
+  window.addEventListener('afterprint', function () { document.querySelectorAll('details.kitbox').forEach(function (d) { d.open = d.getAttribute('data-wasopen') === '1'; }); });
   function listStats(lid) { var it = load('wp-lists', []).filter(function (x) { return x.list === lid; }); return { n: it.filter(function (x) { return x.done; }).length, of: it.length, items: it }; }
   function listCard(l) {
     var st = listStats(l[0]);
+    if (l[0] === 'kit') {   // v1.7.1: compact, collapsed-by-default box (Michael's suggestion)
+      return '<details class="card kitbox"' + (kitOpen ? ' open' : '') + '><summary><span class="kb-i">🧰</span><b>Emergency kit</b><small>' + st.of + ' items · ' + st.n + ' packed</small></summary><ul class="kb-list">' + st.items.map(function (x) { return '<li class="' + (x.done ? 'done' : '') + '"><label><input type="checkbox" class="chk" data-lt="' + x.id + '"' + (x.done ? ' checked' : '') + '><span>' + esc(x.title) + '</span></label><button type="button" class="x sm" data-ldel="' + x.id + '" aria-label="Remove">×</button></li>'; }).join('') + '</ul><div class="addrow"><input placeholder="Add an item…" data-ladd="' + l[0] + '"><button class="btn sm alt" data-laddb="' + l[0] + '">Add</button></div></details>';
+    }
     return '<div class="card lst"><div class="lst-h">' + ring(st.of ? st.n / st.of * 100 : 0, 58) + '<div><h3>' + l[1] + '</h3><div class="sub" style="margin:0">' + st.n + ' of ' + st.of + ' done</div></div></div><ul class="list">' + st.items.map(function (x) { return '<li class="row' + (x.done ? ' done' : '') + '"><input type="checkbox" class="chk" data-lt="' + x.id + '"' + (x.done ? ' checked' : '') + '><div class="main"><div class="t">' + esc(x.title) + '</div></div><button type="button" class="x sm" data-ldel="' + x.id + '" aria-label="Remove">×</button></li>'; }).join('') + '</ul><div class="addrow"><input placeholder="Add an item…" data-ladd="' + l[0] + '"><button class="btn sm alt" data-laddb="' + l[0] + '">Add</button></div></div>';
   }
   function pLists() {
@@ -1442,7 +1449,7 @@
   function meInfo() { var em = ''; try { em = JSON.parse(localStorage.getItem('wp-sync-account') || '{}').email || ''; } catch (e) {} var nm = localStorage.getItem('wp-sync-me') || ''; return { email: em, name: nm || (em ? em.split('@')[0] : '') }; }
   function pSuggest() {
     var me = meInfo(), list = load('wp-suggestions', []).slice().sort(function (a, b) { return (b.date || 0) - (a.date || 0); });
-    var h = heroBand('💡', 'Suggest a change', 'Want something different in the planner? Tell us here: everyone sees the list.');
+    var h = heroBand('💡', 'Suggest a change', 'Want something different in the planner? Tell us here: suggestions go to Michael’s assistant (the list stays visible to everyone).');
     h += '<div class="card" id="sug-form"><h3>New suggestion</h3>' +
       '<div class="kv"><span>From</span><b>' + esc(me.name ? me.name + (me.email ? ' (' + me.email + ')' : '') : 'Not signed in: add your name below') + '</b></div>' +
       (me.name ? '' : '<label class="f">Your name<input id="sug-name" placeholder="Your name"></label>') +

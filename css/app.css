@@ -324,3 +324,9 @@ body.j-on{overflow:hidden}
 .help-i h3{margin:14px 0 4px}.help-i p{margin:0 0 6px}
 #fab-suggest{position:fixed;right:14px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:50;background:#7a4a35;color:#fff;border-radius:20px;padding:8px 12px;font-size:13px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.2);opacity:.92}
 @media (min-width:900px){#fab-suggest{bottom:18px}}
+
+/* v1.7.1 compact emergency kit */
+.kitbox{padding:10px 14px}.kitbox summary{cursor:pointer;display:flex;align-items:center;gap:8px;list-style:none;min-height:44px;font-size:15px}.kitbox summary::-webkit-details-marker{display:none}
+.kitbox summary small{margin-left:auto;color:#6b7280;font-size:12.5px;white-space:nowrap}.kitbox summary::after{content:'▾';color:#9ca3af;margin-left:4px;transition:transform .2s}.kitbox[open] summary::after{transform:rotate(180deg)}.kb-i{font-size:20px}
+.kb-list{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:2px 10px}.kb-list li{display:flex;align-items:center;gap:4px;font-size:13.5px}.kb-list label{display:flex;align-items:center;gap:6px;flex:1;min-height:36px;cursor:pointer}.kb-list li.done span{text-decoration:line-through;color:#9ca3af}.kb-list .x{opacity:.5}
+@media print{.kitbox .addrow,.kitbox .x{display:none!important}.kitbox summary::after{display:none}}

@@ -260,7 +260,8 @@
     '.sxm-btn.alt{background:#fff;color:#7a4e3a}.sxm-btn.on{background:#b5838d;border-color:#b5838d;color:#fff}' +
     '.sxm-row{display:flex;gap:8px;flex-wrap:wrap}.sxm-row .sxm-btn{flex:1 1 40%}.sxm-row .sxm-btn{margin:6px 0}.sxm-sm{font-size:12px;color:#6b7280}.sxm-err{font-size:12px;color:#b91c1c;margin-top:6px;word-break:break-word}' +
     '@media (pointer:coarse){.sxm-chip{min-height:44px}.sxm-sync-btn{width:44px;height:44px}}' +
-    '@media print{.sxm-chip,.sxm-sync-btn,.sxm-lu,#wp-sync-modal{display:none!important}}';
+    '.sxm-banner{display:none;width:100%;box-sizing:border-box;border:0;border-bottom:1px solid #f3c6c6;background:#fdecec;color:#7f1d1d;font-size:13.5px;font-weight:600;padding:10px 14px;text-align:center;cursor:pointer;min-height:44px;line-height:1.3}.sxm-banner.on{display:block}' +
+    '@media print{.sxm-banner,.sxm-chip,.sxm-sync-btn,.sxm-lu,#wp-sync-modal{display:none!important}}';
   document.head.appendChild(css);
 
   var chip, syncBtn, modal;
@@ -274,10 +275,28 @@
     syncBtn.setAttribute('aria-label', 'Sync now'); syncBtn.innerHTML = '<span>&#x21bb;</span>';
     host.insertBefore(syncBtn, host.firstChild); host.insertBefore(chip, host.firstChild);
     chip.addEventListener('click', function () { openModal(); });
+    banner = document.createElement('button'); banner.type = 'button'; banner.className = 'sxm-banner no-print'; banner.id = 'wp-sync-banner';
+    var tb = document.querySelector('header.topbar'); if (tb && tb.parentNode) tb.parentNode.insertBefore(banner, tb.nextSibling); else document.body.insertBefore(banner, document.body.firstChild);
+    banner.addEventListener('click', function () { if (auth && needsSignin && state === 'signin') signIn(); else openModal(); });   // the tap is a user gesture, so the Google pop-up is allowed
     syncBtn.addEventListener('click', function () { if (!auth || needsSignin) openModal(); else runSync('manual'); });
     renderChip();
   }
+  /* v1.7.1: stamped local edits newer than the last successful sync = not yet in the shared file */
+  function pendingCount() {
+    var last = +(lget('wp-sync-last') || 0), meta = S.local.loadMeta(), n = 0;
+    Object.keys(meta).forEach(function (k) { if (meta[k] && meta[k].t > last) n++; });
+    return n;
+  }
+  var banner;
+  function renderBanner() {
+    if (!banner) return;
+    var bad = state === 'signin' || state === 'connect' || state === 'error';
+    var n = pendingCount(), show = bad && (!!auth || n > 0);
+    banner.classList.toggle('on', show);
+    if (show) banner.textContent = '⚠️ Not syncing' + (n ? ' — ' + n + ' change' + (n === 1 ? '' : 's') + ' only on this device' : '') + ' · ' + (native ? 'Tap' : 'Click') + ' to ' + (state === 'connect' ? 'connect' : state === 'error' ? 'see why' : (auth ? 'reconnect' : 'sign in'));
+  }
   function renderChip() {
+    renderBanner();
     if (!chip) return;
     chip.setAttribute('data-s', state);
     chip.innerHTML = '<span class="sxm-dot"></span>' + LABEL[state];
@@ -459,7 +478,7 @@
   var editTimer = null, capTimer = null;
   S.onLocalChange = function () {
     lastEditAt = Date.now();
-    clearTimeout(capTimer); capTimer = setTimeout(renderCaptions, 600);
+    clearTimeout(capTimer); capTimer = setTimeout(function () { renderCaptions(); renderBanner(); }, 600);
     if (!auth) return;
     clearTimeout(editTimer); editTimer = setTimeout(function () { runSync('edit'); }, 5000);
   };
@@ -482,8 +501,7 @@
     if (web && !useRedirect()) { setTimeout(function () { loadGis().catch(function () {}); }, 1500); }   // preload so the sign-in popup opens straight from the click
     if (web && lget('wp-sync-redirect-done')) { finishRedirect(); return; }
     if (auth && web) { try { var wt = JSON.parse(lget('wp-sync-webtok') || 'null'); if (wt && wt.exp > Date.now() + 60000) { auth.access_token = wt.t; auth.exp = wt.exp; } else needsSignin = true; } catch (e) {} }
-    setState(auth ? (navigator.onLine === false ? 'offline' : 'synced') : 'signin', '');
-    if (auth && lget('wp-sync-last') === null) setState('syncing', '');
+    setState(auth ? (navigator.onLine === false ? 'offline' : 'syncing') : 'signin', '');   // v1.7.1: never show “Synced” before a sync has actually succeeded
     if (auth && needsSignin) setState('signin', 'Click “Sign in again” to resume syncing.');
     startup2();
   }
